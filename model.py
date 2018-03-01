@@ -14,10 +14,10 @@ import random;
 import math;
 
 # Defining Constants
-MODEL_FILE_NAME='model.h5'
-DATA_FOLDER_PATH = './data/';
+MODEL_FILE_NAME='model_wo_resize.h5'
+#DATA_FOLDER_PATH = './data/';
 #DATA_FOLDER_PATH = 'E:/Nk_Carnd/Term1/Project_3/SharpTurn1/';
-#DATA_FOLDER_PATH = 'E:/Nk_Carnd/Term1/Project_3/data/';
+DATA_FOLDER_PATH = 'D:/Term1/Project 3 Behaviour cloning/CarND-Behavioral-Cloning-P3-master/data/';
 CSV_FILE_NAME = 'driving_log.csv';
 Y_CROP_START=65;
 Y_CROP_END=135;
@@ -28,13 +28,29 @@ COLUMN_INDEX_STEERING_ANGLE=3;
 TARGET_SIZE = (64,64);
 PRINT_MODEL_ARCH=1;
 STEERING_ANGLE_OFFSET=0.20;
-IMAGE_COUNT_PER_BIN = 80
+INPUT_IMAGE_WIDTH = 320
+INPUT_IMAGE_HEIGHT = 160
 
 #-----Hyper Parameters-----
 BATCH_SIZE = 64;
 EPOCHS = 15;
 
-def normalize_dataset(dataset):
+def normalize_dataset(dataset,IMAGE_COUNT_PER_BIN = 80):
+    """
+    Returns Balanced Dataset
+    Divides the dataset into num_bins, append only IMAGE_COUNT_PER_BIN images into output_dataset
+    resulting in balanced dataset
+    It is requirred here as the provided sample data is having most of the steering angle samples around 0
+
+    # Arguments
+    dataset : list - unbalanced dataset
+    IMAGE_COUNT_PER_BIN : int - number of Images to keep per bean
+    
+    # Returns
+    output_dataset : list - balanced dataset
+
+    """
+
     num_bins = 1000;
     step=1.0/num_bins;
     freq=[0]*(num_bins+1);
@@ -58,6 +74,16 @@ def normalize_dataset(dataset):
     return output_dataset;
 
 def load_csv(csv_file_path=os.path.join(DATA_FOLDER_PATH,CSV_FILE_NAME)):
+    """
+    Returns the list of entries in the csv file expect headers
+
+    # Arguments
+    csv_file_path : String - path of csv file to load
+
+    # Returns
+    entries : list - list of all entries in csv file provided except headers
+    """
+
     entries=[];
     with open(csv_file_path) as csv_file:
         reader = csv.reader(csv_file);
@@ -76,20 +102,47 @@ def load_csv(csv_file_path=os.path.join(DATA_FOLDER_PATH,CSV_FILE_NAME)):
     return entries;
 
 def read_image_by_path(img_path):
-    '''
-     param: img_path - path of image
-     read image as RGB image from the given path
-     In Drive.py Images are read as RGB Image , but opencv uses BGR to load an Image , 
-     so converting it to BGR2RGB after reading
-    '''
+    """
+    read image as RGB image from the path provided
+    
+    In Drive.py Images are read as RGB Image , but opencv uses BGR to load an Image
+    so Conversion to RGB after reading is requirred for CV2 Implementation
+    
+    Matplotlib reads an image as RGB Image only
+
+    # Arguments 
+    img_path : String - path of the image to read
+    
+    # Returns
+    output_img : numpy.array - RGB Image
+
+    """
+
     # CV2 Implementation
     # img=cv2.imread(img_path);
     # return cv2.cvtColor(img,cv2.COLOR_BGR2RGB);
     return plt.imread(img_path);
 
 def get_preprocessed_image(img):
+    """
+    Returns Preprocessed Image
+    Preprocessing includes cropping the image vertically and resizing it to TARGET_SIZE
+
+    # Argument
+        img : numpy.array - input image
+
+    # Returns:
+        output_img : numpy.array - preprocessed output image
+
+    """
+
     # Cropping image and resizing
-    return cv2.resize(img[Y_CROP_START:Y_CROP_END,:,:],TARGET_SIZE);
+    # output_img = cv2.resize(img[Y_CROP_START:Y_CROP_END,:,:],TARGET_SIZE);
+    output_img = img[Y_CROP_START:Y_CROP_END,:,:];
+    # plt.figure('Original Image')
+    # plt.imshow(output_img);
+    # plt.show();
+    return output_img;
 
 def augment_row(row):
     steering_angle=float(row[COLUMN_INDEX_STEERING_ANGLE]);
@@ -123,26 +176,30 @@ def get_generator(samples,batch_size=BATCH_SIZE):
         for i in range(0,num_samples,batch_size):
             batch_samples=samples[i:i+batch_size];  # batch_samples=samples[i:min(i+batch_size,num_samples)];, min is not requirred python handles it internally,array will be cliped till len(array)
             steering_angles=np.zeros(shape=(batch_size,),dtype=np.float32);  # these should be nparrays
-            imgs=np.zeros(shape=(batch_size,64,64,3),dtype=np.float32);  # these should be nparrays
+            imgs=np.zeros(shape=(batch_size,Y_CROP_END-Y_CROP_START,INPUT_IMAGE_WIDTH,3),dtype=np.float32);  # these should be nparrays
             for j in range(0,len(batch_samples)):
                 batch_sample = batch_samples[j];
                 imgs[j],steering_angles[j] = augment_row(batch_sample);
             imgs,steering_angles=shuffle(imgs,steering_angles);
             yield (imgs,steering_angles); # these should be nparrays
 
-def resize_img(img):
-    img=np.asarray(img,dtype=np.float32)
-    return cv2.resize(img,TARGET_SIZE)
-
 def get_model(Verbose=PRINT_MODEL_ARCH):
-    '''
-    function defines the Deep Neural Netwrok Model built using karas
-    '''
+    """
+    Returns the Deep Neural Sequential Netwrok Model built using karas
+
+    # Arguments
+    Verbose : int if 1 then prints the summary of model on console else not 
+    
+    # Returns
+    model : Sequential Model
+
+    """
     model=Sequential();
     # Cropping layer : added in model to do cropping on GPU which will be faster
     # model.add(Cropping2D(cropping=((Y_CROP_START,Y_CROP_END),(0,0)),input_shape=(160,320,3)));
     # Resizing the image to (64,64) as requirement of model
-    model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=(64,64,3)));
+    # model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=(64,64,3)));
+    model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=((Y_CROP_END-Y_CROP_START),INPUT_IMAGE_WIDTH,3)));
     # 1st Convolution layer output_shape = 64x64x32 
     model.add(Convolution2D(32,5,5,subsample=(1,1),border_mode='same'));#,activation='ELU'));
     model.add(ELU());
@@ -231,7 +288,7 @@ if __name__=="__main__":
     # rand_index=np.random.randint(0,len(x))
     # print("shape of input image : " , (x[rand_index].shape));
     # plt.figure("Random preprocessed Image");
-    # plt.imshow((x[rand_index]*255/np.amax(x[rand_index]).astype('uint8')));
+    # plt.imshow((x[rand_index]).astype('uint8'));
     # plt.show();
 
     # For Visualizing Original and preprocessed Image
