@@ -201,7 +201,7 @@ def get_model(Verbose=PRINT_MODEL_ARCH):
     # model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=(64,64,3)));
     model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=((Y_CROP_END-Y_CROP_START),INPUT_IMAGE_WIDTH,3)));
     # 1st Convolution layer output_shape = 64x64x32 
-    model.add(Convolution2D(32,5,5,subsample=(1,1),border_mode='same'));#,activation='ELU'));
+    model.add(Convolution2D(32,5,5,subsample=(2,2),border_mode='same'));#,activation='ELU'));
     model.add(ELU());
     # 1st MaxPooling layer output_shape = 32x32x32
     model.add(MaxPooling2D(pool_size=(2,2),strides=None));
