@@ -14,9 +14,7 @@ import random;
 import math;
 
 # Defining Constants
-MODEL_FILE_NAME='model_wo_resize.h5'
-#DATA_FOLDER_PATH = './data/';
-#DATA_FOLDER_PATH = 'E:/Nk_Carnd/Term1/Project_3/SharpTurn1/';
+MODEL_FILE_NAME='model.h5'
 DATA_FOLDER_PATH = 'D:/Term1/Project 3 Behaviour cloning/CarND-Behavioral-Cloning-P3-master/data/';
 CSV_FILE_NAME = 'driving_log.csv';
 Y_CROP_START=65;
@@ -25,7 +23,6 @@ COLUMN_INDEX_CENTER_IMG=0;
 COLUMN_INDEX_LEFT_IMG=1
 COLUMN_INDEX_RIGHT_IMG=2;
 COLUMN_INDEX_STEERING_ANGLE=3;
-TARGET_SIZE = (64,64);
 PRINT_MODEL_ARCH=1;
 STEERING_ANGLE_OFFSET=0.20;
 INPUT_IMAGE_WIDTH = 320
@@ -35,7 +32,7 @@ INPUT_IMAGE_HEIGHT = 160
 BATCH_SIZE = 64;
 EPOCHS = 15;
 
-def normalize_dataset(dataset,IMAGE_COUNT_PER_BIN = 80):
+def balance_dataset(dataset,IMAGE_COUNT_PER_BIN = 80):
     """
     Returns Balanced Dataset
     Divides the dataset into num_bins, append only IMAGE_COUNT_PER_BIN images into output_dataset
@@ -126,7 +123,7 @@ def read_image_by_path(img_path):
 def get_preprocessed_image(img):
     """
     Returns Preprocessed Image
-    Preprocessing includes cropping the image vertically and resizing it to TARGET_SIZE
+    Preprocessing includes cropping the image vertically
 
     # Argument
         img : numpy.array - input image
@@ -145,6 +142,22 @@ def get_preprocessed_image(img):
     return output_img;
 
 def augment_row(row):
+    """
+    Returns an augmented row 
+    augmantation includes randomly choosing the camera image from center left and right camera
+    adding the offset to steering angle based on the image choosen
+
+    preprocessing the image which includes cropping the image to just select the drivable portion from the frame
+
+    randomly flipping the image along vertical axis and changing the sign of steering angle
+
+    # Argument 
+        row : array - consisting of 3 camera images , steering angle and throttle and break values
+    # Return 
+        img : augmented image
+        steering_angle : augmented steering angle value
+    """
+
     steering_angle=float(row[COLUMN_INDEX_STEERING_ANGLE]);
     # randomly choosing the image from center , left and right camera
     img_index_to_choose = np.random.choice([COLUMN_INDEX_CENTER_IMG,COLUMN_INDEX_LEFT_IMG,COLUMN_INDEX_RIGHT_IMG]);
@@ -171,6 +184,16 @@ def augment_row(row):
     return img,steering_angle;
 
 def get_generator(samples,batch_size=BATCH_SIZE):
+    """
+    loads the batch as per the batch_size and returns imgages and steering angle
+    generator is used to save memory and loading data for single batch only
+    # Argument
+        samples : list - containing imgages and steering angle
+        batch_size : int - size of a batch
+    
+    # Return 
+        Yields imgages and steering angle for a batch
+    """
     num_samples=len(samples)
     while 1:
         for i in range(0,num_samples,batch_size):
@@ -197,34 +220,30 @@ def get_model(Verbose=PRINT_MODEL_ARCH):
     model=Sequential();
     # Cropping layer : added in model to do cropping on GPU which will be faster
     # model.add(Cropping2D(cropping=((Y_CROP_START,Y_CROP_END),(0,0)),input_shape=(160,320,3)));
-    # Resizing the image to (64,64) as requirement of model
-    # model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=(64,64,3)));
     model.add(Lambda(lambda x : (x/255.0)-0.5,input_shape=((Y_CROP_END-Y_CROP_START),INPUT_IMAGE_WIDTH,3)));
-    # 1st Convolution layer output_shape = 64x64x32 
+    # 1st Convolution layer output_shape = 35x160x32 
     model.add(Convolution2D(32,5,5,subsample=(2,2),border_mode='same'));#,activation='ELU'));
     model.add(ELU());
-    # 1st MaxPooling layer output_shape = 32x32x32
+    # 1st MaxPooling layer output_shape = 17x80x32
     model.add(MaxPooling2D(pool_size=(2,2),strides=None));
-    # 2nd Convolution layer output_shape = 32x32x16
+    # 2nd Convolution layer output_shape = 17x80x16
     model.add(Convolution2D(16,3,3,subsample=(1,1),border_mode='same'));#,activation='ELU'));
     model.add(ELU());
-    #model.add(Dropout(0.4));
-    # 2nd MaxPooling layer output_shape = 16x16x16
+    # model.add(Dropout(0.4));
+    # 2nd MaxPooling layer output_shape = 8x40x16
     model.add(MaxPooling2D(pool_size=(2,2),strides=None));
-    # 3rd Convolution layer output_shape = 14x14x16
+    # 3rd Convolution layer output_shape = 6x38x16
     model.add(Convolution2D(16,3,3,subsample=(1,1),border_mode='valid'));#,activation='ELU'));
     model.add(ELU());
     model.add(Dropout(0.3));
 
     # Flatten the output
     model.add(Flatten())
-    # 4th layer : Dense output_shape = 1024
-    #model.add(Dense(1024))
+    # 4th layer : Dense output_shape = 512
     model.add(Dense(512))
     model.add(ELU())
     model.add(Dropout(0.3))
-    # 5th layer: Dense output_shape = 512
-    #model.add(Dense(512))
+    # 5th layer: Dense output_shape = 256
     model.add(Dense(256))
     model.add(ELU())
     # Finally a single output, since this is a regression problem
@@ -236,6 +255,19 @@ def get_model(Verbose=PRINT_MODEL_ARCH):
     return model;
 
 def train_model(samples):
+
+    """
+    Splits the provided samples into training and validation data
+    validation data size is chosen 20% of training data
+
+    loads the best weights if model.h5 file exists, trains the model 
+    and saves the best model after each epoch if validation loss improves
+    also plots training and validation loss graph after the training completion
+
+    # Argument
+        samples : list - containing imgages and steering angle
+    """
+
     # Splitting data
     train_data,valid_data = train_test_split(samples,test_size=0.2);
     # generators
@@ -274,12 +306,14 @@ if __name__=="__main__":
     samples = load_csv();
     print("CSV file loaded successfully..");
     print("Number of samples in CSV : ",len(samples));
-    print(samples[0][0]);
+    #print(samples[0][0]);
 
-    norm_samples=normalize_dataset(samples);
+    # balancing the dataset
+    norm_samples=balance_dataset(samples);
+    # training the model
     train_model(norm_samples);
 
-    #normalize_dataset(samples);#[COLUMN_INDEX_CENTER_IMG],samples[COLUMN_INDEX_STEERING_ANGLE])
+    #balance_dataset(samples);#[COLUMN_INDEX_CENTER_IMG],samples[COLUMN_INDEX_STEERING_ANGLE])
 
     # print(samples[0][0])
     # img=np.array(plt.imread((samples[0][0])));
@@ -292,7 +326,7 @@ if __name__=="__main__":
     # plt.show();
 
     # For Visualizing Original and preprocessed Image
-    # org_img=read_image_by_path('.//data//IMG//center_2016_12_01_13_30_48_287.jpg')
+    # org_img=read_image_by_path('D://Term1//Project 3 Behaviour cloning//CarND-Behavioral-Cloning-P3-master//data//IMG//center_2016_12_01_13_30_48_287.jpg')
     # plt.figure("Original Image");
     # plt.imshow(org_img);
     # pre_img = get_preprocessed_image(org_img);
